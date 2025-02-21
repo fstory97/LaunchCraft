@@ -36,11 +36,12 @@ chmod +x launchcraft.sh
 
 - Window Detection: The script needs to detect the application window class for proper integration. When prompted, click the application window with the crosshair cursor.
 - Language: The script automatically uses Korean if your system locale is Korean, English otherwise. You can override this with the -l option.
+- Permission: When registering a URL shortcut, set the execution permission by right-clicking on the desktop icon and selecting "Properties".
 
 ## Examples
-
+![Registered example](docs/images/desktop.png)
 ### Adding an AppImage application
-![AppImage GPU errors example](docs/images/appimage-gpu-errors.png)
+![AppImage GPU errors example](docs/images/appimage-gpu-errors-en.png)
 * GPU-related errors may appear but can be safely ignored. The application will work correctly.
 
 These screenshots show:
