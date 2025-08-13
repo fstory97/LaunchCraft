@@ -2,104 +2,187 @@
 
 set -e  # 오류 발생 시 스크립트 종료
 
+# 시스템 언어 확인 (가장 먼저 실행하여 모든 메시지에 적용)
+if [[ "$(locale | grep LANG= | cut -d= -f2)" == ko_* ]]; then
+    LANGUAGE="ko"
+else
+    LANGUAGE="en"
+fi
+
 # 필요한 패키지 체크 및 설치
 check_and_install_packages() {
-    local missing_packages=()
-    
-    # wget 또는 curl 체크
-    if ! command -v wget &>/dev/null && ! command -v curl &>/dev/null; then
-        missing_packages+=("wget")
-    fi
-    
-    # gtk-update-icon-cache 체크
-    if ! command -v gtk-update-icon-cache &>/dev/null; then
-        missing_packages+=("gtk-update-icon-cache")
-    fi
-    
-    # update-desktop-database 체크
-    if ! command -v update-desktop-database &>/dev/null; then
-        missing_packages+=("desktop-file-utils")
-    fi
-    
-    # xprop 체크
-    if ! command -v xprop &>/dev/null; then
-        missing_packages+=("xprop")
-    fi
-    
-    # 누락된 패키지가 있으면 설치
-    if [ ${#missing_packages[@]} -ne 0 ]; then
-        if [[ "$LANGUAGE" == "ko" ]]; then
-            echo "⚠️ 필요한 패키지를 설치합니다..."
-            INSTALL_ERROR="❌ 패키지 관리자를 찾을 수 없습니다. 수동으로 다음 패키지를 설치해주세요:"
-        else
-            echo "⚠️ Installing required packages..."
-            INSTALL_ERROR="❌ Package manager not found. Please install these packages manually:"
-        fi
-
-        if command -v apt &>/dev/null; then
-            sudo apt update && sudo apt install -y "${missing_packages[@]}"
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y "${missing_packages[@]}"
-        else
-            echo "$INSTALL_ERROR"
-            printf '%s\n' "${missing_packages[@]}"
+    # Flatpak 샌드박스 환경 감지
+    if [ -f /etc/os-release ]; then
+        if grep -q "org.freedesktop.platform" /etc/os-release || [ -n "$FLATPAK_ID" ]; then
+            if [[ "$LANGUAGE" == "ko" ]]; then
+                echo "================================================================================"
+                echo "❌ 이 스크립트는 현재 터미널(Flatpak)에서 실행할 수 없습니다."
+                echo
+                echo "이유: 현재 터미널은 외부와 격리된 '샌드박스' 환경입니다."
+                echo "      이곳에서는 시스템에 필요한 프로그램을 설치할 수 없습니다."
+                echo
+                echo "해결책: "
+                echo "  1. 현재 터미널 창을 닫아주세요."
+                echo "  2. 바탕화면이나 애플리케이션 메뉴에서 '터미널' 또는 '콘솔'을 새로 열어주세요."
+                echo "  3. 새로 연 터미널에서 이 스크립트를 다시 실행해주세요."
+                echo "================================================================================"
+            else
+                echo "================================================================================"
+                echo "❌ This script cannot be run from the current terminal (Flatpak)."
+                echo
+                echo "Reason: This is a 'sandbox' environment, isolated from your main system."
+                echo "        Installing required system packages is not possible here."
+                echo
+                echo "Solution:"
+                echo "  1. Please close this terminal window."
+                echo "  2. Open a new 'Terminal' or 'Console' from your desktop or applications menu."
+                echo "  3. In the new terminal, run this script again."
+                echo "================================================================================"
+            fi
             exit 1
         fi
     fi
+
+    local missing_commands=()
+    # wget 또는 curl 중 하나는 있어야 함
+    if ! command -v wget &>/dev/null && ! command -v curl &>/dev/null; then
+        missing_commands+=("wget/curl")
+    fi
+    # 기타 필요한 명령어 체크
+    if ! command -v gtk-update-icon-cache &>/dev/null; then
+        missing_commands+=("gtk-update-icon-cache")
+    fi
+    if ! command -v update-desktop-database &>/dev/null; then
+        missing_commands+=("update-desktop-database")
+    fi
+    if ! command -v xprop &>/dev/null; then
+        missing_commands+=("xprop")
+    fi
+    if ! command -v xdg-user-dir &>/dev/null; then
+        missing_commands+=("xdg-user-dir")
+    fi
+
+    # 누락된 명령어가 없으면 함수 종료
+    if [ ${#missing_commands[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    local packages_to_install=()
+    local pm=""
+    # /etc/os-release를 통해 배포판 확인
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        case "$ID" in
+            ubuntu|debian|pop|mint|linuxmint)
+                pm="apt"
+                ;;
+            fedora|centos|rhel)
+                pm="dnf"
+                ;;
+            arch|manjaro)
+                pm="pacman"
+                ;;
+            opensuse*|sles)
+                pm="zypper"
+                ;;
+        esac
+    fi
+
+    # OS 확인 실패 시, 명령어로 다시 확인 (Fallback)
+    if [ -z "$pm" ]; then
+        if type apt &>/dev/null; then pm="apt";
+        elif type dnf &>/dev/null; then pm="dnf";
+        elif type pacman &>/dev/null; then pm="pacman";
+        elif type zypper &>/dev/null; then pm="zypper";
+        fi
+    fi
+
+    if [ -n "$pm" ]; then
+        # 패키지 관리자에 따라 필요한 패키지 목록 생성
+        for cmd in "${missing_commands[@]}"; do
+            case "$pm:$cmd" in
+                "apt:wget/curl") packages_to_install+=("wget") ;;
+                "apt:gtk-update-icon-cache") packages_to_install+=("libgtk-3-bin") ;;
+                "apt:update-desktop-database") packages_to_install+=("desktop-file-utils") ;;
+                "apt:xprop") packages_to_install+=("x11-utils") ;;
+                "apt:xdg-user-dir") packages_to_install+=("xdg-user-dirs") ;;
+
+                "dnf:wget/curl") packages_to_install+=("wget") ;;
+                "dnf:gtk-update-icon-cache") packages_to_install+=("gtk3") ;;
+                "dnf:update-desktop-database") packages_to_install+=("desktop-file-utils") ;;
+                "dnf:xprop") packages_to_install+=("xorg-x11-utils") ;;
+                "dnf:xdg-user-dir") packages_to_install+=("xdg-user-dirs") ;;
+
+                "pacman:wget/curl") packages_to_install+=("wget") ;;
+                "pacman:gtk-update-icon-cache") packages_to_install+=("gtk3") ;;
+                "pacman:update-desktop-database") packages_to_install+=("desktop-file-utils") ;;
+                "pacman:xprop") packages_to_install+=("xorg-xprop") ;;
+                "pacman:xdg-user-dir") packages_to_install+=("xdg-user-dirs") ;;
+
+                "zypper:wget/curl") packages_to_install+=("wget") ;;
+                "zypper:gtk-update-icon-cache") packages_to_install+=("gtk3-tools") ;;
+                "zypper:update-desktop-database") packages_to_install+=("desktop-file-utils") ;;
+                "zypper:xprop") packages_to_install+=("xorg-xprop") ;;
+                "zypper:xdg-user-dir") packages_to_install+=("xdg-user-dirs") ;;
+            esac
+        done
+        
+        # 중복된 패키지 제거
+        packages_to_install=($(printf "%s\n" "${packages_to_install[@]}" | sort -u))
+
+        if [ ${#packages_to_install[@]} -ne 0 ]; then
+            if [[ "$LANGUAGE" == "ko" ]]; then echo "⚠️ 필요한 패키지를 설치합니다..."; else echo "⚠️ Installing required packages..."; fi
+            case "$pm" in
+                "apt") sudo apt update && sudo apt install -y "${packages_to_install[@]}" ;;
+                "dnf") sudo dnf install -y "${packages_to_install[@]}" ;;
+                "pacman") sudo pacman -S --noconfirm "${packages_to_install[@]}" ;;
+                "zypper") sudo zypper install -y "${packages_to_install[@]}" ;;
+            esac
+        fi
+    else
+        # 패키지 관리자를 찾을 수 없는 경우
+        if [[ "$LANGUAGE" == "ko" ]]; then
+            INSTALL_ERROR="❌ 패키지 관리자를 찾을 수 없습니다. 수동으로 다음 패키지/명령어를 설치해주세요:"
+        else
+            INSTALL_ERROR="❌ Package manager not found. Please install these packages/commands manually:"
+        fi
+        echo "$INSTALL_ERROR"
+        printf '%s\n' "${missing_commands[@]}"
+        exit 1
+    fi
 }
 
-# 스크립트 시작 시 패키지 체크
-check_and_install_packages
+# 언어 옵션 및 AppImage/URL 입력을 위한 변수 초기화
+INPUT=""
 
-# 시스템 언어 확인 (기본값)
-if [[ "$(locale | grep LANG= | cut -d= -f2)" == ko_* ]]; then
-    DEFAULT_LANGUAGE="ko"
-else
-    DEFAULT_LANGUAGE="en"
-fi
-
-# 언어 기본값 설정
-LANGUAGE="$DEFAULT_LANGUAGE"
-
-# 전체 사용법 메시지
-FULL_USAGE_KO="사용법: $0 [-l en|ko] <AppImage 파일 경로 | URL>
-옵션:
-  -l en   영어로 표시 (기본값)
-  -l ko   한국어로 표시
-예시:
-  $0 /home/user/MyApp.AppImage    (AppImage 등록)
-  $0 -l ko /home/user/MyApp.AppImage  (한국어로 AppImage 등록)
-  $0 https://chat.openai.com      (웹사이트 바로가기 등록)
-  $0 -l ko https://chat.openai.com (한국어로 웹사이트 바로가기 등록)"
-
-FULL_USAGE_EN="Usage: $0 [-l en|ko] <AppImage file path | URL>
-Options:
-  -l en   Set language to English (default)
-  -l ko   Set language to Korean
-Examples:
-  $0 /home/user/MyApp.AppImage    (Add an AppImage)
-  $0 -l ko /home/user/MyApp.AppImage  (Add an AppImage with Korean messages)
-  $0 https://chat.openai.com      (Add a website shortcut)
-  $0 -l ko https://chat.openai.com (Add a website shortcut with Korean messages)"
-
-# 언어 옵션 확인 (-l 옵션이 있으면 해당 언어로 강제 설정)
+# 인자 파싱
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -l)
             shift
-            case "$1" in
-                "ko") LANGUAGE="ko" ;;
-                "en") LANGUAGE="en" ;;
-                *) echo "Invalid language option. Use '-l en' or '-l ko'."; exit 1 ;;
-            esac
-            shift
+            if [[ -n "$1" ]]; then
+                case "$1" in
+                    "ko") LANGUAGE="ko" ;;
+                    "en") LANGUAGE="en" ;;
+                    *) echo "Invalid language option. Use '-l en' or '-l ko'."; exit 1 ;;
+                esac
+                shift
+            else
+                echo "Error: Missing language argument for -l option."
+                exit 1
+            fi
             ;;
         *)
-            INPUT="$1"
+            if [[ -z "$INPUT" ]]; then
+                INPUT="$1"
+            fi
             shift
             ;;
     esac
 done
+
+# 언어 설정이 완료된 후 패키지 체크 실행
+check_and_install_packages
 
 # 다국어 메시지 설정
 if [[ "$LANGUAGE" == "ko" ]]; then
@@ -115,7 +198,6 @@ if [[ "$LANGUAGE" == "ko" ]]; then
     MSG_SUCCESS="🎉 성공적으로 등록되었습니다!"
     MSG_CLICK_WINDOW="🖱️ 앱이 실행되면 십자 모양(+) 커서로 해당 앱 창을 클릭해주세요..."
     MSG_WM_CLASS="❗ WM_CLASS를 자동으로 감지하지 못했습니다. 앱이 실행되면 창을 선택해주세요."
-    FULL_USAGE="$FULL_USAGE_KO"
 else
     MSG_INPUT="🔍 Analyzing input..."
     MSG_ERROR_INPUT="❌ Error: Please provide an AppImage file path or a website URL."
@@ -129,14 +211,12 @@ else
     MSG_SUCCESS="🎉 Successfully added!"
     MSG_CLICK_WINDOW="🖱️ When the app launches, click its window with the crosshair (+) cursor..."
     MSG_WM_CLASS="❗ Could not detect WM_CLASS automatically. Please select the window when the app launches."
-    FULL_USAGE="$FULL_USAGE_EN"
 fi
 
 echo "$MSG_INPUT"
 
 if [[ -z "$INPUT" ]]; then
     echo "$MSG_ERROR_INPUT"
-    echo "$FULL_USAGE"
     exit 1
 fi
 
@@ -173,9 +253,26 @@ if [[ "$INPUT" == *.AppImage ]]; then
 
     APP_NAME=$(basename "$APPIMAGE_PATH" | sed 's/.AppImage//g')
     APP_DIR="$HOME/.local/share/applications"
-    DESKTOP_DIR="$HOME/Desktop"
     ICON_DIR="$HOME/.local/share/icons"
     ICON_DEST="$ICON_DIR/$APP_NAME.png"
+
+    # 사용자 데스크톱 디렉토리 확인 (XDG 표준 사용)
+    if [[ "$ADD_TO_DESKTOP" == true ]]; then
+        if command -v xdg-user-dir &>/dev/null; then
+            DESKTOP_DIR=$(xdg-user-dir DESKTOP)
+        else
+            DESKTOP_DIR="$HOME/Desktop"
+        fi
+    else
+        DESKTOP_DIR=""
+    fi
+
+    # 바로가기 및 아이콘을 저장할 디렉토리 생성 (없는 경우)
+    mkdir -p "$APP_DIR"
+    if [[ -n "$DESKTOP_DIR" ]]; then
+        mkdir -p "$DESKTOP_DIR"
+    fi
+    mkdir -p "$ICON_DIR"
 
     # 기존 파일들 삭제
     rm -f "$APP_DIR/$APP_NAME.desktop"
@@ -184,32 +281,87 @@ if [[ "$INPUT" == *.AppImage ]]; then
 
     chmod +x "$APPIMAGE_PATH"
 
-    # 아이콘 디렉토리 생성 (없는 경우)
-    mkdir -p "$ICON_DIR"
-
-    # WM_CLASS 자동 감지 시도
+    # WM_CLASS 감지 (타임아웃, GPU 비활성화, 충돌 방지, 대화형)
     echo "$MSG_CLICK_WINDOW"
-    "$APPIMAGE_PATH" &  
-    sleep 3
-    WM_CLASS=$(xprop WM_CLASS | awk -F '"' '{print $2}' | head -n 1)
-    pkill -f "$APPIMAGE_PATH"
+    
+    # set -e를 잠시 비활성화하여 AppImage 충돌이 스크립트를 중단시키지 않도록 함
+    set +e
+    # AppImage를 GPU 비활성화 및 충돌 방지 옵션과 함께 백그라운드에서 실행
+    "$APPIMAGE_PATH" --no-sandbox --disable-gpu &
+    APP_PID=$!
+    # set -e를 다시 활성화
+    set -e
+    
+    # 앱이 실행되고 창을 띄울 시간을 줌
+    sleep 5
 
-    if [[ -z "$WM_CLASS" || "$WM_CLASS" == "xprop:"* ]]; then
-        echo "$MSG_WM_CLASS"
+    # AppImage 프로세스가 여전히 실행 중인지 확인
+    if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+        # 프로세스가 죽었으면, 충돌 메시지를 보여주고 기본값으로 진행
+        if [[ "$LANGUAGE" == "ko" ]]; then
+            echo "❗ AppImage 프로세스가 충돌했거나 시작하지 못했습니다. GPU 관련 문제일 수 있습니다. 기본값으로 계속합니다."
+        else
+            echo "❗ AppImage process crashed or failed to start. This might be a GPU issue. Continuing with default values."
+        fi
         WM_CLASS="$APP_NAME"
+    else
+        # 프로세스가 살아있으면, 대화형으로 WM_CLASS를 얻으려고 시도 (15초 타임아웃)
+        WM_CLASS_OUTPUT=$(timeout 15 xprop WM_CLASS 2>/dev/null || true)
+        
+        # AppImage 프로세스 종료
+        kill "$APP_PID" >/dev/null 2>&1 || true
+
+        # WM_CLASS 추출
+        if [[ $WM_CLASS_OUTPUT == *"WM_CLASS"* ]]; then
+            WM_CLASS=$(echo "$WM_CLASS_OUTPUT" | awk -F '"' '{print $4}')
+        else
+            # 감지 실패 시 (타임아웃 포함) 기본값 사용
+            if [[ "$LANGUAGE" == "ko" ]]; then
+                echo "❗ 창 선택 시간이 초과되었거나 감지에 실패했습니다. 기본값으로 계속합니다."
+            else
+                echo "❗ Window selection timed out or failed. Continuing with default values."
+            fi
+            WM_CLASS="$APP_NAME"
+        fi
     fi
 
-    # 아이콘 파일 복사
+    # 아이콘 파일 복사 (타임아웃 및 충돌 방지 로직 추가)
     if [[ -f "$APPIMAGE_PATH" ]]; then
         TEMP_DIR=$(mktemp -d)
         cd "$TEMP_DIR"
-        "$APPIMAGE_PATH" --appimage-extract >/dev/null 2>&1
-        ICON_PATH=$(find "$TEMP_DIR/squashfs-root" -type f -name "*.png" | head -n 1)
-        if [[ -n "$ICON_PATH" ]]; then
-            cp "$ICON_PATH" "$ICON_DEST"
+        
+        # set -e를 잠시 비활성화하여 아이콘 추출 중 충돌이 발생해도 스크립트가 중단되지 않도록 함
+        set +e
+        # 10초 타임아웃 추가
+        timeout 10 "$APPIMAGE_PATH" --appimage-extract >/dev/null 2>&1
+        EXTRACT_STATUS=$?
+        set -e
+
+        if [ $EXTRACT_STATUS -eq 0 ]; then
+            # 추출 성공 시 아이콘 검색 및 복사
+            ICON_PATH=$(find "$TEMP_DIR/squashfs-root" -type f \( -name "*.png" -o -name "*.svg" \) -print -quit 2>/dev/null)
+            if [[ -n "$ICON_PATH" ]]; then
+                cp "$ICON_PATH" "$ICON_DEST"
+            fi
+        elif [ $EXTRACT_STATUS -eq 124 ]; then # 124는 timeout의 종료 코드
+            # 타임아웃 발생 시 사용자에게 알림
+            if [[ "$LANGUAGE" == "ko" ]]; then
+                echo "❗ 아이콘 추출 시간이 초과되었습니다. 기본 아이콘으로 계속합니다."
+            else
+                echo "❗ Icon extraction timed out. Continuing with a default icon."
+            fi
+        else
+            # 그 외 다른 오류로 추출 실패 시 사용자에게 알림
+            if [[ "$LANGUAGE" == "ko" ]]; then
+                echo "❗ 아이콘 추출에 실패했습니다. 기본 아이콘으로 계속합니다."
+            else
+                echo "❗ Icon extraction failed. Continuing with a default icon."
+            fi
         fi
-        rm -rf "$TEMP_DIR"
+        
+        # 임시 디렉토리 정리
         cd - >/dev/null
+        rm -rf "$TEMP_DIR"
     fi
 
     # 아이콘이 없는 경우 기본 아이콘 사용
@@ -217,22 +369,36 @@ if [[ "$INPUT" == *.AppImage ]]; then
         ICON_DEST="application-x-executable"
     fi
 
-# **2️⃣ URL 처리**
+# URL 처리
 elif [[ "$INPUT" == http* ]]; then
     URL="$INPUT"
-    APP_NAME=$(echo "$URL" | awk -F[/:] '{print $4}' | sed 's/www.//g')
+    APP_NAME=$(echo "$URL" | awk -F[/:] '{print $4}' | sed 's/www.//g' | cut -d. -f1)
     APP_DIR="$HOME/.local/share/applications"
-    DESKTOP_DIR="$HOME/Desktop"
     ICON_DIR="$HOME/.local/share/icons"
     ICON_DEST="$ICON_DIR/$APP_NAME.png"
+
+    # 사용자 데스크톱 디렉토리 확인 (XDG 표준 사용)
+    if [[ "$ADD_TO_DESKTOP" == true ]]; then
+        if command -v xdg-user-dir &>/dev/null; then
+            DESKTOP_DIR=$(xdg-user-dir DESKTOP)
+        else
+            DESKTOP_DIR="$HOME/Desktop"
+        fi
+    else
+        DESKTOP_DIR=""
+    fi
+
+    # 바로가기 및 아이콘을 저장할 디렉토리 생성 (없는 경우)
+    mkdir -p "$APP_DIR"
+    if [[ -n "$DESKTOP_DIR" ]]; then
+        mkdir -p "$DESKTOP_DIR"
+    fi
+    mkdir -p "$ICON_DIR"
 
     # 기존 파일들 삭제
     rm -f "$APP_DIR/$APP_NAME.desktop"
     rm -f "$DESKTOP_DIR/$APP_NAME.desktop"
     rm -f "$ICON_DIR/$APP_NAME.png"
-
-    # 아이콘 디렉토리 생성 (없는 경우)
-    mkdir -p "$ICON_DIR"
 
     if command -v google-chrome &>/dev/null; then
         BROWSER="google-chrome"
@@ -247,107 +413,11 @@ elif [[ "$INPUT" == http* ]]; then
         exit 1
     fi
 
-    # 파비콘 다운로드 시도 (여러 소스에서 시도)
-    if command -v wget &>/dev/null; then
-        # 1. HTML에서 고해상도 아이콘 링크 찾기 (더 좋은 품질의 아이콘을 먼저 시도)
-        if ! wget -q "$URL" -O- | grep -i '<link.*rel=["'"'"'].*icon.*["'"'"']' > "$ICON_DEST.html" 2>/dev/null; then
-            echo "⚠️ 웹사이트 접근에 실패했습니다. 기본 아이콘을 사용합니다."
-            ICON_DEST="web-browser"
-        else
-            ICON_URL=$(grep -i "apple-touch-icon" "$ICON_DEST.html" | head -n 1 | sed -n 's/.*href=["'"'"']\([^"'"'"']*\).*/\1/p')
-            if [[ -z "$ICON_URL" ]]; then
-                ICON_URL=$(grep -i "icon" "$ICON_DEST.html" | head -n 1 | sed -n 's/.*href=["'"'"']\([^"'"'"']*\).*/\1/p')
-            fi
-            
-            # 상대 URL을 절대 URL로 변환
-            if [[ "$ICON_URL" == /* ]]; then
-                ICON_URL="https://${URL#*://}$ICON_URL"
-            elif [[ "$ICON_URL" != http* ]]; then
-                ICON_URL="https://${URL#*://}/$ICON_URL"
-            fi
-            
-            # 발견된 아이콘 다운로드 시도
-            if [[ -n "$ICON_URL" ]]; then
-                if ! wget -q "$ICON_URL" -O "$ICON_DEST.found" 2>/dev/null; then
-                    echo "⚠️ 고해상도 아이콘 다운로드에 실패했습니다. 다른 방법을 시도합니다."
-                fi
-            fi
-
-            # 2. 웹사이트 root의 favicon.ico 시도
-            if ! wget -q "https://${URL#*://}/favicon.ico" -O "$ICON_DEST.ico" 2>/dev/null; then
-                echo "⚠️ favicon.ico 다운로드에 실패했습니다. 다른 방법을 시도합니다."
-            fi
-            
-            # 가장 큰 파일 선택
-            for f in "$ICON_DEST.ico" "$ICON_DEST.found"; do
-                if [[ -f "$f" && ( ! -f "$ICON_DEST" || $(stat -f%z "$f") -gt $(stat -f%z "$ICON_DEST") ) ]]; then
-                    mv "$f" "$ICON_DEST"
-                else
-                    rm -f "$f" 2>/dev/null
-                fi
-            done
-            
-            # 3. 모든 시도 실패시 Google favicon 서비스 사용
-            if [[ ! -s "$ICON_DEST" ]]; then
-                if ! wget -q "https://www.google.com/s2/favicons?sz=256&domain=$URL" -O "$ICON_DEST" 2>/dev/null; then
-                    echo "⚠️ Google favicon 서비스 접근에 실패했습니다. 기본 아이콘을 사용합니다."
-                    ICON_DEST="web-browser"
-                fi
-            fi
-            
-            # 임시 파일 정리
-            rm -f "$ICON_DEST.html" 2>/dev/null
-        fi
-    elif command -v curl &>/dev/null; then
-        # 1. HTML에서 고해상도 아이콘 링크 찾기
-        if ! curl -s "$URL" | grep -i '<link.*rel=["'"'"'].*icon.*["'"'"']' > "$ICON_DEST.html" 2>/dev/null; then
-            echo "⚠️ 웹사이트 접근에 실패했습니다. 기본 아이콘을 사용합니다."
-            ICON_DEST="web-browser"
-        else
-            ICON_URL=$(grep -i "apple-touch-icon" "$ICON_DEST.html" | head -n 1 | sed -n 's/.*href=["'"'"']\([^"'"'"']*\).*/\1/p')
-            if [[ -z "$ICON_URL" ]]; then
-                ICON_URL=$(grep -i "icon" "$ICON_DEST.html" | head -n 1 | sed -n 's/.*href=["'"'"']\([^"'"'"']*\).*/\1/p')
-            fi
-            
-            # 상대 URL을 절대 URL로 변환
-            if [[ "$ICON_URL" == /* ]]; then
-                ICON_URL="https://${URL#*://}$ICON_URL"
-            elif [[ "$ICON_URL" != http* ]]; then
-                ICON_URL="https://${URL#*://}/$ICON_URL"
-            fi
-            
-            # 발견된 아이콘 다운로드 시도
-            if [[ -n "$ICON_URL" ]]; then
-                if ! curl -s "$ICON_URL" -o "$ICON_DEST.found" 2>/dev/null; then
-                    echo "⚠️ 고해상도 아이콘 다운로드에 실패했습니다. 다른 방법을 시도합니다."
-                fi
-            fi
-
-            # 2. 웹사이트 root의 favicon.ico 시도
-            if ! curl -s "https://${URL#*://}/favicon.ico" -o "$ICON_DEST.ico" 2>/dev/null; then
-                echo "⚠️ favicon.ico 다운로드에 실패했습니다. 다른 방법을 시도합니다."
-            fi
-            
-            # 가장 큰 파일 선택
-            for f in "$ICON_DEST.ico" "$ICON_DEST.found"; do
-                if [[ -f "$f" && ( ! -f "$ICON_DEST" || $(stat -f%z "$f") -gt $(stat -f%z "$ICON_DEST") ) ]]; then
-                    mv "$f" "$ICON_DEST"
-                else
-                    rm -f "$f" 2>/dev/null
-                fi
-            done
-            
-            # 3. 모든 시도 실패시 Google favicon 서비스 사용
-            if [[ ! -s "$ICON_DEST" ]]; then
-                if ! curl -s "https://www.google.com/s2/favicons?sz=256&domain=$URL" -o "$ICON_DEST" 2>/dev/null; then
-                    echo "⚠️ Google favicon 서비스 접근에 실패했습니다. 기본 아이콘을 사용합니다."
-                    ICON_DEST="web-browser"
-                fi
-            fi
-            
-            # 임시 파일 정리
-            rm -f "$ICON_DEST.html" 2>/dev/null
-        fi
+    # 파비콘 다운로드
+    if command -v curl &>/dev/null; then
+        curl -s -L "https://www.google.com/s2/favicons?sz=256&domain=$URL" -o "$ICON_DEST"
+    elif command -v wget &>/dev/null; then
+        wget -q "https://www.google.com/s2/favicons?sz=256&domain=$URL" -O "$ICON_DEST"
     fi
 
     # 파비콘 다운로드 실패 시 기본 아이콘 사용
@@ -363,7 +433,7 @@ fi
 if [[ "$ADD_TO_DOCK" == true ]]; then
     DESKTOP_FILE_DOCK="$APP_DIR/$APP_NAME.desktop"
 fi
-if [[ "$ADD_TO_DESKTOP" == true ]]; then
+if [[ "$ADD_TO_DESKTOP" == true && -n "$DESKTOP_DIR" ]]; then
     DESKTOP_FILE_DESKTOP="$DESKTOP_DIR/$APP_NAME.desktop"
 fi
 
@@ -385,7 +455,7 @@ EOL
             cat > "$DEST" <<EOL
 [Desktop Entry]
 Name=$APP_NAME
-Exec="$APPIMAGE_PATH"
+Exec="$APPIMAGE_PATH" --no-sandbox --disable-gpu
 Icon=$ICON_DEST
 Terminal=false
 Type=Application
