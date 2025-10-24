@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - vivaldi
 - Multi-source favicon download with fallback
   - HTML parsing for apple-touch-icon and link rel="icon"
+  - Protocol-relative URL handling (`//example.com/path`)
+  - Common apple-touch-icon paths (`/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, `/apple-touch-icon-180x180.png`)
   - Direct site favicon.ico
   - DuckDuckGo favicon service
   - Google favicon service (fallback)
