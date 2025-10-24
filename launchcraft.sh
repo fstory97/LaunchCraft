@@ -440,15 +440,122 @@ elif [[ "$INPUT" == http* ]]; then
         exit 1
     fi
 
-    # 파비콘 다운로드
+    # 파비콘 다운로드 (여러 소스 시도)
+    FAVICON_DOWNLOADED=false
+    
+    # 도메인 및 프로토콜 추출
+    DOMAIN=$(echo "$URL" | awk -F[/:] '{print $4}')
+    PROTOCOL=$(echo "$URL" | grep -oP '^https?' || echo "https")
+    
     if command -v curl &>/dev/null; then
-        curl -s -L "https://www.google.com/s2/favicons?sz=256&domain=$URL" -o "$ICON_DEST"
+        # 방법 1: HTML 파싱으로 apple-touch-icon, link rel="icon" 등 찾기
+        HTML_CONTENT=$(curl -s -L --max-time 10 "$URL" 2>/dev/null)
+        if [[ -n "$HTML_CONTENT" ]]; then
+            # apple-touch-icon 찾기 (따옴표 있는/없는 경우 모두 처리)
+            ICON_URL=$(echo "$HTML_CONTENT" | grep -i "apple-touch-icon" | head -1 | sed 's/.*href=//' | sed 's/[ >].*//' | tr -d '"' | tr -d "'")
+            
+            # 일반 icon 링크 찾기
+            if [[ -z "$ICON_URL" ]]; then
+                ICON_URL=$(echo "$HTML_CONTENT" | grep -i 'rel=.*icon' | head -1 | sed 's/.*href=//' | sed 's/[ >].*//' | tr -d '"' | tr -d "'")
+            fi
+            
+            # 상대 경로를 절대 경로로 변환
+            if [[ -n "$ICON_URL" ]]; then
+                if [[ "$ICON_URL" == http* ]]; then
+                    FULL_ICON_URL="$ICON_URL"
+                elif [[ "$ICON_URL" == /* ]]; then
+                    FULL_ICON_URL="${PROTOCOL}://${DOMAIN}${ICON_URL}"
+                else
+                    FULL_ICON_URL="${PROTOCOL}://${DOMAIN}/${ICON_URL}"
+                fi
+                
+                curl -s -L --max-time 5 "$FULL_ICON_URL" -o "$ICON_DEST" 2>/dev/null
+                if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                    FAVICON_DOWNLOADED=true
+                fi
+            fi
+        fi
+        
+        # 방법 2: 사이트 직접 favicon.ico
+        if [[ "$FAVICON_DOWNLOADED" == false ]]; then
+            curl -s -L --max-time 5 "${PROTOCOL}://${DOMAIN}/favicon.ico" -o "$ICON_DEST" 2>/dev/null
+            if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                FAVICON_DOWNLOADED=true
+            fi
+        fi
+        
+        # 방법 3: DuckDuckGo 파비콘 서비스
+        if [[ "$FAVICON_DOWNLOADED" == false ]]; then
+            curl -s -L --max-time 5 "https://icons.duckduckgo.com/ip3/${DOMAIN}.ico" -o "$ICON_DEST" 2>/dev/null
+            if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                FAVICON_DOWNLOADED=true
+            fi
+        fi
+        
+        # 방법 4: Google 파비콘 서비스
+        if [[ "$FAVICON_DOWNLOADED" == false ]]; then
+            curl -s -L --max-time 5 "https://www.google.com/s2/favicons?sz=256&domain=$URL" -o "$ICON_DEST" 2>/dev/null
+            if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                FAVICON_DOWNLOADED=true
+            fi
+        fi
     elif command -v wget &>/dev/null; then
-        wget -q "https://www.google.com/s2/favicons?sz=256&domain=$URL" -O "$ICON_DEST"
+        # 방법 1: HTML 파싱으로 apple-touch-icon, link rel="icon" 등 찾기
+        HTML_CONTENT=$(wget -q --timeout=10 -O - "$URL" 2>/dev/null)
+        if [[ -n "$HTML_CONTENT" ]]; then
+            # apple-touch-icon 찾기 (따옴표 있는/없는 경우 모두 처리)
+            ICON_URL=$(echo "$HTML_CONTENT" | grep -i "apple-touch-icon" | head -1 | sed 's/.*href=//' | sed 's/[ >].*//' | tr -d '"' | tr -d "'")
+            
+            # 일반 icon 링크 찾기
+            if [[ -z "$ICON_URL" ]]; then
+                ICON_URL=$(echo "$HTML_CONTENT" | grep -i 'rel=.*icon' | head -1 | sed 's/.*href=//' | sed 's/[ >].*//' | tr -d '"' | tr -d "'")
+            fi
+            
+            # 상대 경로를 절대 경로로 변환
+            if [[ -n "$ICON_URL" ]]; then
+                if [[ "$ICON_URL" == http* ]]; then
+                    FULL_ICON_URL="$ICON_URL"
+                elif [[ "$ICON_URL" == /* ]]; then
+                    FULL_ICON_URL="${PROTOCOL}://${DOMAIN}${ICON_URL}"
+                else
+                    FULL_ICON_URL="${PROTOCOL}://${DOMAIN}/${ICON_URL}"
+                fi
+                
+                wget -q --timeout=5 "$FULL_ICON_URL" -O "$ICON_DEST" 2>/dev/null
+                if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                    FAVICON_DOWNLOADED=true
+                fi
+            fi
+        fi
+        
+        # 방법 2: 사이트 직접 favicon.ico
+        if [[ "$FAVICON_DOWNLOADED" == false ]]; then
+            wget -q --timeout=5 "${PROTOCOL}://${DOMAIN}/favicon.ico" -O "$ICON_DEST" 2>/dev/null
+            if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                FAVICON_DOWNLOADED=true
+            fi
+        fi
+        
+        # 방법 3: DuckDuckGo 파비콘 서비스
+        if [[ "$FAVICON_DOWNLOADED" == false ]]; then
+            wget -q --timeout=5 "https://icons.duckduckgo.com/ip3/${DOMAIN}.ico" -O "$ICON_DEST" 2>/dev/null
+            if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                FAVICON_DOWNLOADED=true
+            fi
+        fi
+        
+        # 방법 4: Google 파비콘 서비스
+        if [[ "$FAVICON_DOWNLOADED" == false ]]; then
+            wget -q --timeout=5 "https://www.google.com/s2/favicons?sz=256&domain=$URL" -O "$ICON_DEST" 2>/dev/null
+            if [[ -s "$ICON_DEST" ]] && file "$ICON_DEST" | grep -q "image"; then
+                FAVICON_DOWNLOADED=true
+            fi
+        fi
     fi
 
     # 파비콘 다운로드 실패 시 기본 아이콘 사용
-    if [[ ! -s "$ICON_DEST" ]]; then
+    if [[ "$FAVICON_DOWNLOADED" == false ]] || [[ ! -s "$ICON_DEST" ]]; then
+        rm -f "$ICON_DEST" 2>/dev/null
         ICON_DEST="web-browser"
     fi
 else

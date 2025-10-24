@@ -17,22 +17,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-detect Vivaldi (com.vivaldi.Vivaldi)
 - KDE Plasma desktop environment support
   - Desktop environment detection (GNOME vs KDE)
-  - User guidance for pinning to taskbar in KDE Plasma
+  - Automatic taskbar pinning via plasma-org.kde.plasma.desktop-appletsrc
   - Proper handling of gsettings errors in non-GNOME environments
 - Additional system browser detection
   - google-chrome-stable
   - chromium
   - brave-browser
   - vivaldi
+- Multi-source favicon download with fallback
+  - HTML parsing for apple-touch-icon and link rel="icon"
+  - Direct site favicon.ico
+  - DuckDuckGo favicon service
+  - Google favicon service (fallback)
+  - Image validation to ensure valid favicon downloads
 
 ### Changed
 - Browser detection logic now checks system browsers first, then Flatpak browsers
 - Improved error handling for environments without web browsers
+- Favicon download now tries multiple sources for better accuracy
 
 ### Fixed
 - "A web browser is required" error on systems with Flatpak browsers only
 - "org.gnome.shell schema not found" error on KDE Plasma environments
 - Taskbar pinning now works correctly on both GNOME and KDE Plasma
+- Incorrect favicon downloads (e.g., Windows icon for Outlook)
 
 ## [0.2.0] - 2025-02-21
 
