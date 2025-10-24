@@ -8,6 +8,8 @@ LaunchCraft는 리눅스 데스크톱 환경에서 AppImage 파일과 웹사이�
 - 커스텀 아이콘이 포함된 웹사이트 바로가기 생성
 - 간단한 쉘 스크립트 기반 솔루션
 - 다국어 지원 (영어/한국어)
+- Flatpak 브라우저 자동 감지 (Chrome, Firefox, Edge, Brave, Vivaldi 등)
+- 다중 데스크톱 환경 지원 (GNOME, KDE Plasma)
 
 ## 사용 방법
 
@@ -54,23 +56,37 @@ chmod +x launchcraft.sh
 
 - 리눅스 배포판:
   - 데비안 기반 배포판 (Debian, Ubuntu 등)
-  - Zorin OS 17 (Core)에서 테스트됨
+  - 페도라 기반 배포판 (Fedora, Bazzite 등)
+  - Arch 기반 배포판 (Arch, Manjaro 등)
+  - openSUSE 기반 배포판
 - 데스크톱 환경:
   - GNOME 데스크톱 환경
+  - KDE Plasma 데스크톱 환경
   - GTK 기반 환경
-- 필요한 패키지:
+- 필요한 패키지 (없는 경우 자동 설치):
   - bash
   - wget 또는 curl
   - gtk-update-icon-cache
   - update-desktop-database
+  - xprop
+  - xdg-user-dirs
+- 웹 브라우저 (URL 바로가기용, 최소 하나 필요):
+  - 시스템 브라우저: Chrome, Firefox, Chromium, Edge, Brave, Vivaldi
+  - Flatpak 브라우저: 설치된 경우 자동 감지
 
 ## 테스트 환경
 
 ### 운영체제
-- ✅ Zorin OS 17 (Core)
+- ✅ Zorin OS 17 (Core) - GNOME
+- ✅ Bazzite - KDE Plasma
 - 👍 다음 환경에서도 작동 예상:
   - Ubuntu (20.04 LTS 이상)
-  - GNOME을 사용하는 기타 데비안 기반 배포판
+  - 페도라 기반 배포판
+  - GNOME 또는 KDE Plasma를 사용하는 기타 Debian/Fedora/Arch 기반 배포판
+
+### 데스크톱 환경
+- ✅ GNOME - 작업 표시줄 자동 고정 지원
+- ✅ KDE Plasma - 작업 표시줄 자동 고정 지원
 
 ### 애플리케이션
 - AppImage:
@@ -80,6 +96,7 @@ chmod +x launchcraft.sh
   - ChatGPT (chat.openai.com)
   - Google (google.com)
   - Naver (naver.com)
+  - 한컴독스 (hancomdocs.com)
 
 ## 라이선스
 

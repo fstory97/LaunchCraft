@@ -400,14 +400,41 @@ elif [[ "$INPUT" == http* ]]; then
     rm -f "$DESKTOP_DIR/$APP_NAME.desktop"
     rm -f "$ICON_DIR/$APP_NAME.png"
 
+    # 시스템 브라우저 감지
     if command -v google-chrome &>/dev/null; then
         BROWSER="google-chrome"
+    elif command -v google-chrome-stable &>/dev/null; then
+        BROWSER="google-chrome-stable"
     elif command -v chromium-browser &>/dev/null; then
         BROWSER="chromium-browser"
+    elif command -v chromium &>/dev/null; then
+        BROWSER="chromium"
     elif command -v microsoft-edge &>/dev/null; then
         BROWSER="microsoft-edge"
     elif command -v firefox &>/dev/null; then
         BROWSER="firefox"
+    elif command -v brave-browser &>/dev/null; then
+        BROWSER="brave-browser"
+    elif command -v vivaldi &>/dev/null; then
+        BROWSER="vivaldi"
+    # Flatpak 브라우저 감지
+    elif command -v flatpak &>/dev/null; then
+        if flatpak list --app | grep -q "com.google.Chrome"; then
+            BROWSER="flatpak run com.google.Chrome"
+        elif flatpak list --app | grep -q "org.chromium.Chromium"; then
+            BROWSER="flatpak run org.chromium.Chromium"
+        elif flatpak list --app | grep -q "com.microsoft.Edge"; then
+            BROWSER="flatpak run com.microsoft.Edge"
+        elif flatpak list --app | grep -q "org.mozilla.firefox"; then
+            BROWSER="flatpak run org.mozilla.firefox"
+        elif flatpak list --app | grep -q "com.brave.Browser"; then
+            BROWSER="flatpak run com.brave.Browser"
+        elif flatpak list --app | grep -q "com.vivaldi.Vivaldi"; then
+            BROWSER="flatpak run com.vivaldi.Vivaldi"
+        else
+            echo "❌ Error: A web browser is required."
+            exit 1
+        fi
     else
         echo "❌ Error: A web browser is required."
         exit 1
@@ -471,11 +498,62 @@ done
 update-desktop-database "$APP_DIR"
 gtk-update-icon-cache
 
-if [[ "$ADD_TO_DOCK" == true ]] && command -v gsettings &>/dev/null; then
-    FAVS=$(gsettings get org.gnome.shell favorite-apps)
-    if [[ $FAVS != *"$APP_NAME.desktop"* ]]; then
-        NEW_FAVS=$(echo "$FAVS" | sed "s/]$/, '$APP_NAME.desktop']/")
-        gsettings set org.gnome.shell favorite-apps "$NEW_FAVS"
+# 작업 표시줄(Dock)에 추가
+if [[ "$ADD_TO_DOCK" == true ]]; then
+    # GNOME 환경 감지
+    if [[ "$XDG_CURRENT_DESKTOP" == *"GNOME"* ]] && command -v gsettings &>/dev/null; then
+        FAVS=$(gsettings get org.gnome.shell favorite-apps)
+        if [[ $FAVS != *"$APP_NAME.desktop"* ]]; then
+            NEW_FAVS=$(echo "$FAVS" | sed "s/]$/, '$APP_NAME.desktop']/")
+            gsettings set org.gnome.shell favorite-apps "$NEW_FAVS"
+        fi
+    # KDE Plasma 환경 자동 추가
+    elif [[ "$XDG_CURRENT_DESKTOP" == *"KDE"* ]]; then
+        PLASMA_CONFIG="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+        if [[ -f "$PLASMA_CONFIG" ]]; then
+            # icontasks 플러그인의 launchers 설정 찾기
+            if grep -q "plugin=org.kde.plasma.icontasks" "$PLASMA_CONFIG"; then
+                # 현재 launchers 목록 가져오기
+                CURRENT_LAUNCHERS=$(grep "^launchers=" "$PLASMA_CONFIG" | head -1)
+                if [[ -n "$CURRENT_LAUNCHERS" ]]; then
+                    # 이미 추가되어 있는지 확인
+                    if [[ "$CURRENT_LAUNCHERS" != *"$APP_NAME.desktop"* ]]; then
+                        # launchers 목록에 추가
+                        NEW_LAUNCHERS="${CURRENT_LAUNCHERS},applications:$APP_NAME.desktop"
+                        sed -i "s|^launchers=.*|$NEW_LAUNCHERS|" "$PLASMA_CONFIG"
+                        
+                        # plasmashell 재시작하여 변경사항 적용
+                        if command -v kquitapp5 &>/dev/null && command -v plasmashell &>/dev/null; then
+                            kquitapp5 plasmashell &>/dev/null || true
+                            sleep 1
+                            plasmashell &>/dev/null &
+                            disown
+                        fi
+                        
+                        if [[ "$LANGUAGE" == "ko" ]]; then
+                            echo "✅ 작업 표시줄에 자동으로 추가되었습니다!"
+                        else
+                            echo "✅ Automatically added to taskbar!"
+                        fi
+                    fi
+                fi
+            fi
+        else
+            # plasma 설정 파일이 없는 경우 수동 안내
+            if [[ "$LANGUAGE" == "ko" ]]; then
+                echo ""
+                echo "📌 KDE Plasma에서 작업 표시줄에 고정하는 방법:"
+                echo "   1. 애플리케이션 메뉴에서 '$APP_NAME'을 찾으세요"
+                echo "   2. 마우스 오른쪽 클릭 → '즐겨찾기에 추가' 또는"
+                echo "   3. 앱을 실행한 후 작업 표시줄 아이콘에서 우클릭 → '고정'"
+            else
+                echo ""
+                echo "📌 To pin to taskbar in KDE Plasma:"
+                echo "   1. Find '$APP_NAME' in the Application Menu"
+                echo "   2. Right-click → 'Add to Favorites' or"
+                echo "   3. Launch the app, then right-click its taskbar icon → 'Pin'"
+            fi
+        fi
     fi
 fi
 

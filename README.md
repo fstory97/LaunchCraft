@@ -8,6 +8,8 @@ LaunchCraft is a utility tool for Linux desktop environments that helps manage a
 - Generate website shortcuts with custom icons
 - Simple shell script based solution
 - Multi-language support (English/Korean)
+- Flatpak browser detection (Chrome, Firefox, Edge, Brave, Vivaldi, etc.)
+- Multi-desktop environment support (GNOME, KDE Plasma)
 
 ## Usage
 
@@ -56,24 +58,37 @@ These screenshots show:
 
 - Linux distributions:
   - Debian-based distributions (Debian, Ubuntu, etc.)
-  - Tested on Zorin OS 17 (Core)
+  - Fedora-based distributions (Fedora, Bazzite, etc.)
+  - Arch-based distributions (Arch, Manjaro, etc.)
+  - openSUSE-based distributions
 - Desktop environments:
   - GNOME Desktop Environment
+  - KDE Plasma Desktop Environment
   - GTK-based environments
-- Required packages:
+- Required packages (automatically installed if missing):
   - bash
   - wget or curl
   - gtk-update-icon-cache
   - update-desktop-database
   - xprop
+  - xdg-user-dirs
+- Web browsers (at least one required for URL shortcuts):
+  - System browsers: Chrome, Firefox, Chromium, Edge, Brave, Vivaldi
+  - Flatpak browsers: Automatically detected if installed
 
 ## Tested Environments
 
 ### Operating Systems
-- ✅ Zorin OS 17 (Core)
+- ✅ Zorin OS 17 (Core) - GNOME
+- ✅ Bazzite - KDE Plasma
 - 👍 Should work on:
   - Ubuntu (20.04 LTS or newer)
-  - Other Debian-based distributions with GNOME
+  - Fedora-based distributions
+  - Other Debian/Fedora/Arch-based distributions with GNOME or KDE Plasma
+
+### Desktop Environments
+- ✅ GNOME - Automatic taskbar pinning supported
+- ✅ KDE Plasma - Automatic taskbar pinning supported
 
 ### Applications
 - AppImage:
@@ -83,6 +98,7 @@ These screenshots show:
   - ChatGPT (chat.openai.com)
   - Google (google.com)
   - Naver (naver.com)
+  - Hancom Docs (hancomdocs.com)
 
 ## License
 
